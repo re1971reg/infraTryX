@@ -1,0 +1,68 @@
+version: '3'
+services:
+  master_postgres:
+    image: postgres:16.9
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=postgres
+    ports:
+      - '5433:5432'
+  master_redis:
+    image: redis/redis-stack:latest
+    ports:
+      - "16379:6379"
+  minio:
+    image: minio/minio
+    ports:
+      - '9020:9000'
+      - '9021:9001'
+    volumes:
+      -  ~/minio/data:/data
+    environment:
+      - MINIO_ROOT_USER=user
+      - MINIO_ROOT_PASSWORD=password
+    command: server --console-address :9001 /data
+  createbuckets:
+    image: minio/mc
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 10;
+      /usr/bin/mc config host add minio http://minio:9000 user password;
+      /usr/bin/mc mb minio/corpbucket;
+      /usr/bin/mc anonymous set public minio/corpbucket;
+      exit 0;
+      "
+  kafka:
+    image: bitnami/kafka
+    ports:
+      - "29192:29092"
+      - "9192:9092"
+    volumes:
+      - kafka_data:/bitnami/kafka
+    environment:
+      KAFKA_CFG_NODE_ID: 1
+      KAFKA_CFG_PROCESS_ROLES: controller,broker
+      KAFKA_CFG_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_EXTERNAL://0.0.0.0:9092,CONTROLLER://kafka:9093
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_EXTERNAL://localhost:9092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: true
+      KAFKA_CFG_NUM_PARTITIONS: 3
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    ports:
+      - "9989:8080"
+    environment:
+      DYNAMIC_CONFIG_ENABLED: "true"
+      KAFKA_CLUSTERS_0_NAME: cluster1
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    depends_on:
+      - kafka
+
+volumes:
+  kafka_data:
